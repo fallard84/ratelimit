@@ -7,6 +7,8 @@ import (
 	"strings"
 	"sync"
 
+	"google.golang.org/protobuf/encoding/protojson"
+
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
@@ -358,9 +360,10 @@ func ratelimitToMetadata(req *pb.RateLimitRequest, passedDescriptors []int, fail
 		}
 
 		if len(failedDescriptorsValues) > 0 {
-			fields["failed_descriptors"] = structpb.NewListValue(&structpb.ListValue{
-				Values: failedDescriptorsValues,
-			})
+			listProto := &structpb.ListValue{Values: failedDescriptorsValues}
+			if jsonBytes, err := protojson.Marshal(listProto); err == nil {
+				fields["failed_descriptors"] = structpb.NewStringValue(string(jsonBytes))
+			}
 		}
 	}
 
