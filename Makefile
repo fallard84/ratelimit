@@ -1,13 +1,14 @@
 export GO111MODULE=on
 PROJECT = ratelimit
-REGISTRY ?= envoyproxy
+REGISTRY ?= fallard
 IMAGE := $(REGISTRY)/$(PROJECT)
 INTEGRATION_IMAGE := $(REGISTRY)/$(PROJECT)_integration
 MODULE = github.com/envoyproxy/ratelimit
 GIT_REF = $(shell git describe --tags --exact-match 2>/dev/null || git rev-parse --short=8 --verify HEAD)
 VERSION ?= $(GIT_REF)
 SHELL := /bin/bash
-BUILDX_PLATFORMS := linux/amd64,linux/arm64/v8
+# BUILDX_PLATFORMS := linux/amd64,linux/arm64/v8
+BUILDX_PLATFORMS := linux/amd64
 # Root dir returns absolute path of current directory. It has a trailing "/".
 PROJECT_DIR := $(dir $(abspath $(lastword $(MAKEFILE_LIST))))
 export PROJECT_DIR
