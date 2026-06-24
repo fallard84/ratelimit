@@ -1,13 +1,12 @@
 package ratelimit
 
 import (
+	"encoding/json"
 	"fmt"
 	"math"
 	"strconv"
 	"strings"
 	"sync"
-
-	"google.golang.org/protobuf/encoding/protojson"
 
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
@@ -323,45 +322,47 @@ func ratelimitToMetadata(req *pb.RateLimitRequest, passedDescriptors []int, fail
 
 	// Add failed descriptors information
 	if len(failedDescriptors) > 0 {
-		failedDescriptorsValues := make([]*structpb.Value, 0, len(failedDescriptors))
+		type limitJSON struct {
+			RequestsPerUnit uint32 `json:"requests_per_unit"`
+			Unit            string `json:"unit"`
+		}
+		type failedDescriptorJSON struct {
+			Entries  []string   `json:"entries"`
+			Limit    *limitJSON `json:"limit,omitempty"`
+			LimitKey string     `json:"limit_key,omitempty"`
+		}
+
+		items := make([]failedDescriptorJSON, 0, len(failedDescriptors))
 		for _, idx := range failedDescriptors {
 			if idx >= len(req.Descriptors) || idx >= len(statuses) {
 				continue
 			}
 
-			failedDescriptorInfo := make(map[string]*structpb.Value)
-
-			// Include descriptor entries
 			descriptor := req.Descriptors[idx]
-			entriesValues := make([]*structpb.Value, 0, len(descriptor.Entries))
+			entries := make([]string, 0, len(descriptor.Entries))
 			for _, entry := range descriptor.Entries {
-				val := fmt.Sprintf("%s=%s", entry.GetKey(), entry.GetValue())
-				entriesValues = append(entriesValues, structpb.NewStringValue(val))
+				entries = append(entries, fmt.Sprintf("%s=%s", entry.GetKey(), entry.GetValue()))
 			}
-			failedDescriptorInfo["entries"] = structpb.NewListValue(&structpb.ListValue{
-				Values: entriesValues,
-			})
 
-			// Include the limit that was exceeded
+			item := failedDescriptorJSON{Entries: entries}
+
 			status := statuses[idx]
 			if status.CurrentLimit != nil {
-				limitInfo := make(map[string]*structpb.Value)
-				limitInfo["requests_per_unit"] = structpb.NewNumberValue(float64(status.CurrentLimit.RequestsPerUnit))
-				limitInfo["unit"] = structpb.NewStringValue(status.CurrentLimit.Unit.String())
-				failedDescriptorInfo["limit"] = structpb.NewStructValue(&structpb.Struct{Fields: limitInfo})
+				item.Limit = &limitJSON{
+					RequestsPerUnit: status.CurrentLimit.RequestsPerUnit,
+					Unit:            status.CurrentLimit.Unit.String(),
+				}
 			}
 
-			// Include the limit key from the config for identification
 			if idx < len(limitsToCheck) && limitsToCheck[idx] != nil {
-				failedDescriptorInfo["limit_key"] = structpb.NewStringValue(limitsToCheck[idx].FullKey)
+				item.LimitKey = limitsToCheck[idx].FullKey
 			}
 
-			failedDescriptorsValues = append(failedDescriptorsValues, structpb.NewStructValue(&structpb.Struct{Fields: failedDescriptorInfo}))
+			items = append(items, item)
 		}
 
-		if len(failedDescriptorsValues) > 0 {
-			listProto := &structpb.ListValue{Values: failedDescriptorsValues}
-			if jsonBytes, err := protojson.Marshal(listProto); err == nil {
+		if len(items) > 0 {
+			if jsonBytes, err := json.Marshal(items); err == nil {
 				fields["failed_descriptors"] = structpb.NewStringValue(string(jsonBytes))
 			}
 		}

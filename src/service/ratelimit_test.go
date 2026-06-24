@@ -245,7 +245,7 @@ func TestRatelimitToMetadata(t *testing.T) {
         }
     ],
     "domain": "fail-domain",
-    "failed_descriptors": "[{\"entries\":[\"route=api\"], \"limit\":{\"requests_per_unit\":100, \"unit\":\"MINUTE\"}, \"limit_key\":\"fail-domain/route/api\"}]"
+    "failed_descriptors": "[{\"entries\":[\"route=api\"],\"limit\":{\"requests_per_unit\":100,\"unit\":\"MINUTE\"},\"limit_key\":\"fail-domain/route/api\"}]"
 }`,
 		},
 		{
@@ -294,7 +294,7 @@ func TestRatelimitToMetadata(t *testing.T) {
         {"entries": ["route=blocked", "method=POST"]}
     ],
     "domain": "mixed-fail-domain",
-    "failed_descriptors": "[{\"entries\":[\"route=blocked\", \"method=POST\"], \"limit\":{\"requests_per_unit\":10, \"unit\":\"SECOND\"}, \"limit_key\":\"mixed-fail-domain/route/blocked\"}]"
+    "failed_descriptors": "[{\"entries\":[\"route=blocked\",\"method=POST\"],\"limit\":{\"requests_per_unit\":10,\"unit\":\"SECOND\"},\"limit_key\":\"mixed-fail-domain/route/blocked\"}]"
 }`,
 		},
 		{
@@ -325,7 +325,7 @@ func TestRatelimitToMetadata(t *testing.T) {
         {"entries": ["key=val"]}
     ],
     "domain": "no-limit-domain",
-    "failed_descriptors": "[{\"entries\":[\"key=val\"], \"limit_key\":\"no-limit-domain/key/val\"}]"
+    "failed_descriptors": "[{\"entries\":[\"key=val\"],\"limit_key\":\"no-limit-domain/key/val\"}]"
 }`,
 		},
 		{
