@@ -208,6 +208,7 @@ func (this *service) shouldRateLimitWorker(
 
 	// Track quota mode violations for metadata
 	var passedDescriptors []int
+	var failedDescriptors []int
 	failedRateLimitDescriptors := 0
 	failedQuotaDescriptors := 0
 	totalQuotaDescriptors := 0
@@ -230,6 +231,8 @@ func (this *service) shouldRateLimitWorker(
 			response.Statuses[i] = descriptorStatus
 			isQuotaMode := globalQuotaMode || (limitsToCheck[i] != nil && limitsToCheck[i].QuotaMode)
 			if descriptorStatus.Code == pb.RateLimitResponse_OVER_LIMIT {
+				// Track failed descriptors for metadata
+				failedDescriptors = append(failedDescriptors, i)
 				if isQuotaMode {
 					failedQuotaDescriptors += 1
 				} else {
@@ -271,14 +274,14 @@ func (this *service) shouldRateLimitWorker(
 
 	// If response dynamic data enabled, set dynamic data on response.
 	if this.responseDynamicMetadataEnabled {
-		response.DynamicMetadata = ratelimitToMetadata(request, passedDescriptors, limitsToCheck)
+		response.DynamicMetadata = ratelimitToMetadata(request, passedDescriptors, failedDescriptors, limitsToCheck, responseDescriptorStatuses)
 	}
 
 	response.OverallCode = finalCode
 	return response
 }
 
-func ratelimitToMetadata(req *pb.RateLimitRequest, passedDescriptors []int, limitsToCheck []*config.RateLimit) *structpb.Struct {
+func ratelimitToMetadata(req *pb.RateLimitRequest, passedDescriptors []int, failedDescriptors []int, limitsToCheck []*config.RateLimit, statuses []*pb.RateLimitResponse_DescriptorStatus) *structpb.Struct {
 	fields := make(map[string]*structpb.Value)
 
 	// Domain
@@ -314,6 +317,51 @@ func ratelimitToMetadata(req *pb.RateLimitRequest, passedDescriptors []int, limi
 
 	if len(passedMetadata.GetFields()) > 0 {
 		fields["metadata"] = structpb.NewStructValue(passedMetadata)
+	}
+
+	// Add failed descriptors information
+	if len(failedDescriptors) > 0 {
+		failedDescriptorsValues := make([]*structpb.Value, 0, len(failedDescriptors))
+		for _, idx := range failedDescriptors {
+			if idx >= len(req.Descriptors) || idx >= len(statuses) {
+				continue
+			}
+
+			failedDescriptorInfo := make(map[string]*structpb.Value)
+
+			// Include descriptor entries
+			descriptor := req.Descriptors[idx]
+			entriesValues := make([]*structpb.Value, 0, len(descriptor.Entries))
+			for _, entry := range descriptor.Entries {
+				val := fmt.Sprintf("%s=%s", entry.GetKey(), entry.GetValue())
+				entriesValues = append(entriesValues, structpb.NewStringValue(val))
+			}
+			failedDescriptorInfo["entries"] = structpb.NewListValue(&structpb.ListValue{
+				Values: entriesValues,
+			})
+
+			// Include the limit that was exceeded
+			status := statuses[idx]
+			if status.CurrentLimit != nil {
+				limitInfo := make(map[string]*structpb.Value)
+				limitInfo["requests_per_unit"] = structpb.NewNumberValue(float64(status.CurrentLimit.RequestsPerUnit))
+				limitInfo["unit"] = structpb.NewStringValue(status.CurrentLimit.Unit.String())
+				failedDescriptorInfo["limit"] = structpb.NewStructValue(&structpb.Struct{Fields: limitInfo})
+			}
+
+			// Include the limit key from the config for identification
+			if idx < len(limitsToCheck) && limitsToCheck[idx] != nil {
+				failedDescriptorInfo["limit_key"] = structpb.NewStringValue(limitsToCheck[idx].FullKey)
+			}
+
+			failedDescriptorsValues = append(failedDescriptorsValues, structpb.NewStructValue(&structpb.Struct{Fields: failedDescriptorInfo}))
+		}
+
+		if len(failedDescriptorsValues) > 0 {
+			fields["failed_descriptors"] = structpb.NewListValue(&structpb.ListValue{
+				Values: failedDescriptorsValues,
+			})
+		}
 	}
 
 	return &structpb.Struct{Fields: fields}
