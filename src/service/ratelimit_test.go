@@ -209,7 +209,7 @@ func TestRatelimitToMetadata(t *testing.T) {
 }`,
 		},
 		{
-			name: "Single failed descriptor with full limit info",
+			name: "Single failed descriptor",
 			req: &pb.RateLimitRequest{
 				Domain: "fail-domain",
 				Descriptors: []*ratelimitv3.RateLimitDescriptor{
@@ -223,18 +223,7 @@ func TestRatelimitToMetadata(t *testing.T) {
 			passedDescriptors: nil,
 			failedDescriptors: []int{0},
 			limitsToCheck: []*config.RateLimit{
-				{
-					FullKey: "fail-domain/route/api",
-				},
-			},
-			statuses: []*pb.RateLimitResponse_DescriptorStatus{
-				{
-					Code: pb.RateLimitResponse_OVER_LIMIT,
-					CurrentLimit: &pb.RateLimitResponse_RateLimit{
-						RequestsPerUnit: 100,
-						Unit:            pb.RateLimitResponse_RateLimit_MINUTE,
-					},
-				},
+				{FullKey: "fail-domain/route/api"},
 			},
 			expected: `{
     "descriptors": [
@@ -245,7 +234,7 @@ func TestRatelimitToMetadata(t *testing.T) {
         }
     ],
     "domain": "fail-domain",
-    "failed_descriptors": "[{\"entries\":[\"route=api\"],\"limit\":{\"requests_per_unit\":100,\"unit\":\"MINUTE\"},\"limit_key\":\"fail-domain/route/api\"}]"
+    "failed_descriptors": "fail-domain/route/api"
 }`,
 		},
 		{
@@ -272,60 +261,53 @@ func TestRatelimitToMetadata(t *testing.T) {
 				{FullKey: "mixed-fail-domain/route/ok"},
 				{FullKey: "mixed-fail-domain/route/blocked"},
 			},
-			statuses: []*pb.RateLimitResponse_DescriptorStatus{
-				{
-					Code: pb.RateLimitResponse_OK,
-					CurrentLimit: &pb.RateLimitResponse_RateLimit{
-						RequestsPerUnit: 1000,
-						Unit:            pb.RateLimitResponse_RateLimit_HOUR,
-					},
-				},
-				{
-					Code: pb.RateLimitResponse_OVER_LIMIT,
-					CurrentLimit: &pb.RateLimitResponse_RateLimit{
-						RequestsPerUnit: 10,
-						Unit:            pb.RateLimitResponse_RateLimit_SECOND,
-					},
-				},
-			},
 			expected: `{
     "descriptors": [
         {"entries": ["route=ok"]},
         {"entries": ["route=blocked", "method=POST"]}
     ],
     "domain": "mixed-fail-domain",
-    "failed_descriptors": "[{\"entries\":[\"route=blocked\",\"method=POST\"],\"limit\":{\"requests_per_unit\":10,\"unit\":\"SECOND\"},\"limit_key\":\"mixed-fail-domain/route/blocked\"}]"
+    "failed_descriptors": "mixed-fail-domain/route/blocked"
 }`,
 		},
 		{
-			name: "Failed descriptor with nil CurrentLimit omits limit field",
+			name: "Multiple failed descriptors are comma-separated",
 			req: &pb.RateLimitRequest{
-				Domain: "no-limit-domain",
+				Domain: "multi-fail-domain",
 				Descriptors: []*ratelimitv3.RateLimitDescriptor{
-					{
-						Entries: []*ratelimitv3.RateLimitDescriptor_Entry{
-							{Key: "key", Value: "val"},
-						},
-					},
+					{Entries: []*ratelimitv3.RateLimitDescriptor_Entry{{Key: "k", Value: "a"}}},
+					{Entries: []*ratelimitv3.RateLimitDescriptor_Entry{{Key: "k", Value: "b"}}},
 				},
 			},
-			passedDescriptors: nil,
-			failedDescriptors: []int{0},
+			failedDescriptors: []int{0, 1},
 			limitsToCheck: []*config.RateLimit{
-				{FullKey: "no-limit-domain/key/val"},
+				{FullKey: "multi-fail-domain/k/a"},
+				{FullKey: "multi-fail-domain/k/b"},
 			},
-			statuses: []*pb.RateLimitResponse_DescriptorStatus{
-				{
-					Code:         pb.RateLimitResponse_OVER_LIMIT,
-					CurrentLimit: nil,
+			expected: `{
+    "descriptors": [
+        {"entries": ["k=a"]},
+        {"entries": ["k=b"]}
+    ],
+    "domain": "multi-fail-domain",
+    "failed_descriptors": "multi-fail-domain/k/a,multi-fail-domain/k/b"
+}`,
+		},
+		{
+			name: "Failed descriptor with nil limit omits it from output",
+			req: &pb.RateLimitRequest{
+				Domain: "no-key-domain",
+				Descriptors: []*ratelimitv3.RateLimitDescriptor{
+					{Entries: []*ratelimitv3.RateLimitDescriptor_Entry{{Key: "key", Value: "val"}}},
 				},
 			},
+			failedDescriptors: []int{0},
+			limitsToCheck:     []*config.RateLimit{nil},
 			expected: `{
     "descriptors": [
         {"entries": ["key=val"]}
     ],
-    "domain": "no-limit-domain",
-    "failed_descriptors": "[{\"entries\":[\"key=val\"],\"limit_key\":\"no-limit-domain/key/val\"}]"
+    "domain": "no-key-domain"
 }`,
 		},
 		{

@@ -1,7 +1,6 @@
 package ratelimit
 
 import (
-	"encoding/json"
 	"fmt"
 	"math"
 	"strconv"
@@ -322,49 +321,14 @@ func ratelimitToMetadata(req *pb.RateLimitRequest, passedDescriptors []int, fail
 
 	// Add failed descriptors information
 	if len(failedDescriptors) > 0 {
-		type limitJSON struct {
-			RequestsPerUnit uint32 `json:"requests_per_unit"`
-			Unit            string `json:"unit"`
-		}
-		type failedDescriptorJSON struct {
-			Entries  []string   `json:"entries"`
-			Limit    *limitJSON `json:"limit,omitempty"`
-			LimitKey string     `json:"limit_key,omitempty"`
-		}
-
-		items := make([]failedDescriptorJSON, 0, len(failedDescriptors))
+		keys := make([]string, 0, len(failedDescriptors))
 		for _, idx := range failedDescriptors {
-			if idx >= len(req.Descriptors) || idx >= len(statuses) {
-				continue
+			if idx < len(limitsToCheck) && limitsToCheck[idx] != nil && limitsToCheck[idx].FullKey != "" {
+				keys = append(keys, limitsToCheck[idx].FullKey)
 			}
-
-			descriptor := req.Descriptors[idx]
-			entries := make([]string, 0, len(descriptor.Entries))
-			for _, entry := range descriptor.Entries {
-				entries = append(entries, fmt.Sprintf("%s=%s", entry.GetKey(), entry.GetValue()))
-			}
-
-			item := failedDescriptorJSON{Entries: entries}
-
-			status := statuses[idx]
-			if status.CurrentLimit != nil {
-				item.Limit = &limitJSON{
-					RequestsPerUnit: status.CurrentLimit.RequestsPerUnit,
-					Unit:            status.CurrentLimit.Unit.String(),
-				}
-			}
-
-			if idx < len(limitsToCheck) && limitsToCheck[idx] != nil {
-				item.LimitKey = limitsToCheck[idx].FullKey
-			}
-
-			items = append(items, item)
 		}
-
-		if len(items) > 0 {
-			if jsonBytes, err := json.Marshal(items); err == nil {
-				fields["failed_descriptors"] = structpb.NewStringValue(string(jsonBytes))
-			}
+		if len(keys) > 0 {
+			fields["failed_descriptors"] = structpb.NewStringValue(strings.Join(keys, ","))
 		}
 	}
 
